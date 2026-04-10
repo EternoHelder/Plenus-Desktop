@@ -11,11 +11,11 @@
 
 set -euo pipefail
 
-DESKTOP_DIR="/home/jostter/.qwen/pietro/pedro-desktop"
+DESKTOP_DIR="/opt/pedro-desktop"
 VENV="$DESKTOP_DIR/venv"
 PIDFILE="/tmp/pedro-desktop.pid"
 PORT=8765
-API_KEY="${OPENAI_API_KEY:-$(grep -oP 'OPENAI_API_KEY="\K[^"]+' /home/jostter/.zshrc 2>/dev/null | head -1)}"
+API_KEY="${OPENAI_API_KEY:-sk-litellm-internal}"
 
 case "${1:-start}" in
     start)
