@@ -206,6 +206,11 @@ class ExtractionRequest(BaseModel):
     formato_saida: str = "markdown"  # markdown, json, tabela
     modelo: Optional[str] = None
 
+class ArtifactRequest(BaseModel):
+    prompt: str
+    artifact_type: str = "html"
+    modelo: Optional[str] = None
+
 # ── API Endpoints ───────────────────────────────────────────
 
 @app.get("/")
@@ -539,8 +544,21 @@ async def get_session(session_id: str):
     raise HTTPException(status_code=404, detail="Sessão não encontrada")
 
 @app.post("/generate-artifact")
-async def generate_artifact(prompt: str, artifact_type: str = "html", modelo: str = None):
+async def generate_artifact(
+    req: Optional[ArtifactRequest] = None,
+    prompt: Optional[str] = None,
+    artifact_type: str = "html",
+    modelo: Optional[str] = None,
+):
     """Gera artifact (HTML, tabela, dashboard, SVG, etc)"""
+    final_prompt = (req.prompt if req else prompt) or ""
+    final_prompt = final_prompt.strip()
+    final_artifact_type = (req.artifact_type if req else artifact_type) or "html"
+    final_modelo = req.modelo if req else modelo
+
+    if not final_prompt:
+        raise HTTPException(status_code=400, detail="prompt é obrigatório")
+
     artifact_prompts = {
         "html": "Gere um arquivo HTML completo e autocontido (CSS + JS inline) que seja visualmente bonito e funcional.",
         "dashboard": "Gere um HTML com dashboard interativo usando Chart.js (via CDN) com dados de exemplo relevantes.",
@@ -550,12 +568,12 @@ async def generate_artifact(prompt: str, artifact_type: str = "html", modelo: st
         "relatorio": "Gere um relatório markdown completo e bem formatado.",
     }
     
-    instrucao = artifact_prompts.get(artifact_type, artifact_prompts["html"])
-    modelo_id, _, modelo_nome = escolher_modelo(prompt, modelo)
+    instrucao = artifact_prompts.get(final_artifact_type, artifact_prompts["html"])
+    modelo_id, _, modelo_nome = escolher_modelo(final_prompt, final_modelo)
     
     full_prompt = f"""{instrucao}
 
-Tema/conteúdo: {prompt}
+Tema/conteúdo: {final_prompt}
 
 IMPORTANTE: Responda APENAS com o código/artefato solicitado, sem texto adicional."""
 
@@ -589,13 +607,13 @@ IMPORTANTE: Responda APENAS com o código/artefato solicitado, sem texto adicion
         artifact_dir.mkdir(exist_ok=True)
         
         ext_map = {"html": "html", "dashboard": "html", "svg": "svg", "react": "jsx", "tabela": "html", "relatorio": "md"}
-        ext = ext_map.get(artifact_type, "html")
+        ext = ext_map.get(final_artifact_type, "html")
         artifact_path = artifact_dir / f"{artifact_id}.{ext}"
         artifact_path.write_text(conteudo, encoding="utf-8")
         
         return {
             "artifact_id": artifact_id,
-            "type": artifact_type,
+            "type": final_artifact_type,
             "modelo": modelo_nome,
             "tempo": round(elapsed, 1),
             "path": str(artifact_path),

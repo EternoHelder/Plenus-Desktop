@@ -543,7 +543,11 @@ with tab_artifacts:
             st.stop()
 
         with st.spinner(f"🧠 Gerando {artifact_type} com {modelo_atual}..."):
-            resp = api_post(f"/generate-artifact?prompt={quote(artifact_prompt)}&artifact_type={artifact_type}")
+            resp = api_post("/generate-artifact", {
+                "prompt": artifact_prompt,
+                "artifact_type": artifact_type,
+                "modelo": modelo_id,
+            })
 
             if resp and "artifact_id" in resp:
                 st.success(f"✅ Artifact gerado ({resp.get('tempo', '?')}s)")
