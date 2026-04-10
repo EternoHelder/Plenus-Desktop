@@ -4,7 +4,7 @@ PEDRO DESKTOP v2.0 — Orquestrador FastAPI
 Cérebro do sistema: router inteligente, context manager, file reader, artifact generator
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
@@ -545,12 +545,20 @@ async def get_session(session_id: str):
 
 @app.post("/generate-artifact")
 async def generate_artifact(
-    req: Optional[ArtifactRequest] = None,
+    req: Optional[ArtifactRequest] = Body(default=None),
     prompt: Optional[str] = None,
     artifact_type: str = "html",
     modelo: Optional[str] = None,
 ):
     """Gera artifact (HTML, tabela, dashboard, SVG, etc)"""
+    # Compatibilidade: aceita novo contrato via JSON body (req)
+    # e mantém suporte a clientes legados que ainda usam query params.
+    if req and any([prompt, artifact_type != "html", modelo]):
+        raise HTTPException(
+            status_code=400,
+            detail="Envie parâmetros no corpo JSON ou via query params, não ambos ao mesmo tempo.",
+        )
+
     final_prompt = (req.prompt if req else prompt) or ""
     final_prompt = final_prompt.strip()
     final_artifact_type = (req.artifact_type if req else artifact_type) or "html"

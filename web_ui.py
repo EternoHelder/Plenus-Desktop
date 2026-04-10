@@ -263,7 +263,7 @@ with st.sidebar:
     st.markdown("#### 📊 Sistema")
     redis_info = api_get("/mcp/redis/info") or {}
     if redis_info:
-        # Supports both legacy (`memory_used`) and current (`used_memory_human`) API payload keys.
+        # `memory_used` = payload antigo do endpoint; `used_memory_human` = payload atual.
         redis_memory = redis_info.get("used_memory_human") or redis_info.get("memory_used") or "?"
         st.caption(f"🔴 Redis keys: {redis_info.get('total_keys', '?')}")
         st.caption(f"🔴 Redis mem: {redis_memory}")
@@ -392,7 +392,7 @@ with tab_upload:
         is_text_content = bool(selected_preview and selected_preview.type and selected_preview.type.startswith("text"))
         has_text_extension = bool(selected_preview and selected_preview.name.endswith(TEXT_PREVIEW_EXTENSIONS))
         if selected_preview and (is_text_content or has_text_extension):
-            # 4x buffer captures enough bytes for multi-byte UTF-8 chars before final char truncation.
+            # UTF-8 pode usar até 4 bytes por caractere; por isso lê 4x para truncar com segurança em chars.
             preview_bytes = selected_preview.getvalue()[:MAX_PREVIEW_CHARS * 4]
             content = preview_bytes.decode("utf-8", errors="replace")[:MAX_PREVIEW_CHARS]
             st.code(content or "(arquivo vazio)", language=None)
