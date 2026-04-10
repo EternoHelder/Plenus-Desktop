@@ -11,6 +11,17 @@ from urllib.parse import quote
 
 # ── Config ──────────────────────────────────────────────────
 API_URL = "http://localhost:8765"
+UPLOAD_FILE_TYPES = [
+    "py", "js", "ts", "sh", "go", "rs", "java", "c", "cpp", "h",
+    "md", "txt", "json", "yaml", "yml", "xml", "html", "css",
+    "sql", "pdf", "docx", "csv", "log",
+]
+NON_TEXT_PREVIEW_TYPES = {"pdf", "docx"}
+TEXT_PREVIEW_FILE_TYPES = tuple(ext for ext in UPLOAD_FILE_TYPES if ext not in NON_TEXT_PREVIEW_TYPES)
+TEXT_PREVIEW_EXTENSIONS = tuple(f".{ext}" for ext in TEXT_PREVIEW_FILE_TYPES)
+MAX_PREVIEW_CHARS = 2500
+MAX_ANALYSIS_HISTORY = 20
+MAX_ANALYSIS_HISTORY_DISPLAY = 10
 st.set_page_config(
     page_title="Pedro Desktop v2.0",
     page_icon="🐧",
@@ -64,6 +75,10 @@ def health_with_latency():
     health = api_get("/health")
     latency_ms = round((time.perf_counter() - t0) * 1000)
     return health, latency_ms
+
+def theme_index(current_theme: str) -> int:
+    options = ["Escuro", "Claro"]
+    return options.index(current_theme) if current_theme in options else 0
 
 def inject_theme(theme_mode: str):
     if theme_mode == "Claro":
@@ -197,7 +212,7 @@ with st.sidebar:
     st.session_state.theme_mode = st.radio(
         "🎨 Tema",
         options=["Escuro", "Claro"],
-        index=0 if st.session_state.theme_mode == "Escuro" else 1,
+        index=theme_index(st.session_state.theme_mode),
         horizontal=True,
     )
     inject_theme(st.session_state.theme_mode)
@@ -248,8 +263,10 @@ with st.sidebar:
     st.markdown("#### 📊 Sistema")
     redis_info = api_get("/mcp/redis/info") or {}
     if redis_info:
+        # Supports both legacy (`memory_used`) and current (`used_memory_human`) API payload keys.
+        redis_memory = redis_info.get("used_memory_human") or redis_info.get("memory_used") or "?"
         st.caption(f"🔴 Redis keys: {redis_info.get('total_keys', '?')}")
-        st.caption(f"🔴 Redis mem: {redis_info.get('used_memory_human', '?')}")
+        st.caption(f"🔴 Redis mem: {redis_memory}")
 
     # Sessões
     st.markdown("#### 💬 Sessões")
@@ -333,7 +350,7 @@ with tab_chat:
                         }
                     })
                 else:
-                    st.error("Não foi possível obter resposta do servidor. Verifique status e tente novamente.")
+                    st.error("Não foi possível obter resposta do servidor. Verifique se a API está online na sidebar e se o modelo está configurado.")
 
     # Limpar chat
     if st.session_state.chat_history and st.button("🗑️ Limpar Chat", type="secondary"):
@@ -348,11 +365,11 @@ with tab_upload:
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        uploaded_files = st.file_uploader("📤 Upload de arquivo(s)", type=[
-            "py", "js", "ts", "sh", "go", "rs", "java", "c", "cpp", "h",
-            "md", "txt", "json", "yaml", "yml", "xml", "html", "css",
-            "sql", "pdf", "docx", "csv", "log",
-        ], accept_multiple_files=True)
+        uploaded_files = st.file_uploader(
+            "📤 Upload de arquivo(s)",
+            type=UPLOAD_FILE_TYPES,
+            accept_multiple_files=True,
+        )
 
     with col2:
         file_path = st.text_input(
@@ -374,9 +391,10 @@ with tab_upload:
         selected_preview = next((f for f in uploaded_files if f.name == preview_file), None)
         if selected_preview and selected_preview.type and (
             selected_preview.type.startswith("text")
-            or selected_preview.name.endswith((".py", ".js", ".ts", ".md", ".txt", ".json", ".yaml", ".yml", ".xml", ".html", ".css", ".sql", ".log"))
+            or selected_preview.name.endswith(TEXT_PREVIEW_EXTENSIONS)
         ):
-            content = selected_preview.getvalue().decode("utf-8", errors="ignore")[:2500]
+            preview_bytes = selected_preview.getvalue()[:MAX_PREVIEW_CHARS * 4]
+            content = preview_bytes.decode("utf-8", errors="replace")[:MAX_PREVIEW_CHARS]
             st.code(content or "(arquivo vazio)", language=None)
 
     tipo_analise = st.selectbox(
@@ -414,7 +432,7 @@ with tab_upload:
                     payload["tipo_analise"] = tipo
                 resp = api_post("/analyze-file", payload)
 
-            progress.progress(int((idx / total) * 100), text=f"Analisado {idx}/{total}")
+            progress.progress(idx / total, text=f"Analisado {idx}/{total}")
             if resp and "analise" in resp:
                 st.success(f"✅ {resp.get('arquivo', caminho)} ({resp.get('tempo', '?')}s)")
                 with st.expander(f"Resultado: {resp.get('arquivo', caminho)}", expanded=(idx == 1)):
@@ -432,7 +450,7 @@ with tab_upload:
                     "tempo": resp.get("tempo", "?"),
                     "timestamp": datetime.now().strftime("%d/%m %H:%M"),
                 })
-                st.session_state.analysis_history = st.session_state.analysis_history[:20]
+                st.session_state.analysis_history = st.session_state.analysis_history[:MAX_ANALYSIS_HISTORY]
             else:
                 st.error(f"Erro na análise de {caminho}: {resp}")
 
@@ -441,7 +459,7 @@ with tab_upload:
     st.markdown("---")
     st.subheader("🕘 Histórico de análises")
     if st.session_state.analysis_history:
-        for i, item in enumerate(st.session_state.analysis_history[:10]):
+        for i, item in enumerate(st.session_state.analysis_history[:MAX_ANALYSIS_HISTORY_DISPLAY]):
             c1, c2, c3, c4 = st.columns([2.5, 1.2, 1, 1])
             c1.caption(f"📄 {item['arquivo']} — `{item['caminho']}`")
             c2.caption(f"🧠 {item['modelo']}")
@@ -590,7 +608,7 @@ with tab_providers:
     if available_keys:
         selected_default = st.selectbox("Definir modelo padrão global:", available_keys)
         if st.button("Aplicar modelo padrão", type="primary"):
-            result = api_post(f"/models/switch?modelo={selected_default}")
+            result = api_post(f"/models/switch?modelo={quote(selected_default)}")
             if result and "mensagem" in result:
                 st.success(result["mensagem"])
             else:
