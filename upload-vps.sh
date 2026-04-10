@@ -7,9 +7,9 @@
 
 set -euo pipefail
 
-VPS="prod"
+VPS="root@srv1291514"
 REMOTE_DIR="/opt/pedro-desktop"
-LOCAL_DIR="/home/jostter/.qwen/pietro/pedro-desktop"
+LOCAL_DIR="/tmp/Plenus-Desktop-temp"
 
 echo "══════════════════════════════════════════"
 echo "📤 Upload + Deploy VPS"

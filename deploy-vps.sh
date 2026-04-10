@@ -12,7 +12,12 @@ DESKTOP_DIR="/opt/pedro-desktop"
 API_PORT=8765
 WEBUI_PORT=8766
 DOMAIN="desktop.plenus.advocaciaplenus.com"
-API_KEY="${OPENAI_API_KEY:-REPLACE_WITH_YOUR_API_KEY}"
+PG_PASSWORD="${PG_PASSWORD:-Deuseeu_2025}"
+PG_USER="${PG_USER:-plenus_app}"
+LITELLM_API_KEY="${LITELLM_API_KEY:-sk-litellm-internal}"
+FIRECRAWL_API_KEY="${FIRECRAWL_API_KEY:-}"
+DATAJUD_API_KEY="${DATAJUD_API_KEY:-}"
+CNJ_API_KEY="${CNJ_API_KEY:-}"
 
 echo "══════════════════════════════════════════"
 echo "🚀 Pedro Desktop v2.0 — Deploy VPS"
@@ -62,7 +67,7 @@ echo "✅ Python pronto"
 echo "[5/7] Configurando systemd services..."
 
 # API Service
-cat > /etc/systemd/system/pedro-desktop-api.service << 'EOF'
+cat > /etc/systemd/system/pedro-desktop-api.service << EOF
 [Unit]
 Description=Pedro Desktop API
 After=network.target redis-server.service nginx.service
@@ -71,7 +76,12 @@ After=network.target redis-server.service nginx.service
 Type=simple
 User=root
 WorkingDirectory=/opt/pedro-desktop
-Environment="OPENAI_API_KEY=REPLACE_WITH_YOUR_API_KEY"
+Environment="OPENAI_API_KEY=$LITELLM_API_KEY"
+Environment="PG_USER=$PG_USER"
+Environment="PG_PASSWORD=$PG_PASSWORD"
+Environment="FIRECRAWL_API_KEY=$FIRECRAWL_API_KEY"
+Environment="DATAJUD_API_KEY=$DATAJUD_API_KEY"
+Environment="CNJ_API_KEY=$CNJ_API_KEY"
 ExecStart=/opt/pedro-desktop/venv/bin/python3 /opt/pedro-desktop/orquestrador.py
 Restart=always
 RestartSec=5
@@ -83,7 +93,7 @@ WantedBy=multi-user.target
 EOF
 
 # Web UI Service
-cat > /etc/systemd/system/pedro-desktop-webui.service << 'EOF'
+cat > /etc/systemd/system/pedro-desktop-webui.service << EOF
 [Unit]
 Description=Pedro Desktop Web UI
 After=network.target pedro-desktop-api.service
@@ -92,7 +102,12 @@ After=network.target pedro-desktop-api.service
 Type=simple
 User=root
 WorkingDirectory=/opt/pedro-desktop
-Environment="OPENAI_API_KEY=REPLACE_WITH_YOUR_API_KEY"
+Environment="OPENAI_API_KEY=$LITELLM_API_KEY"
+Environment="PG_USER=$PG_USER"
+Environment="PG_PASSWORD=$PG_PASSWORD"
+Environment="FIRECRAWL_API_KEY=$FIRECRAWL_API_KEY"
+Environment="DATAJUD_API_KEY=$DATAJUD_API_KEY"
+Environment="CNJ_API_KEY=$CNJ_API_KEY"
 ExecStart=/opt/pedro-desktop/venv/bin/streamlit run /opt/pedro-desktop/web_ui.py --server.port 8766 --server.headless true --server.address 127.0.0.1 --theme.base light --theme.primaryColor "#1a73e8"
 Restart=always
 RestartSec=5
