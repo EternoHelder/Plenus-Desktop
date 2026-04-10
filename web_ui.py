@@ -17,8 +17,8 @@ UPLOAD_FILE_TYPES = [
     "sql", "pdf", "docx", "csv", "log",
 ]
 NON_TEXT_PREVIEW_TYPES = {"pdf", "docx"}
-TEXT_PREVIEW_FILE_TYPES = tuple(ext for ext in UPLOAD_FILE_TYPES if ext not in NON_TEXT_PREVIEW_TYPES)
-TEXT_PREVIEW_EXTENSIONS = tuple(f".{ext}" for ext in TEXT_PREVIEW_FILE_TYPES)
+TEXT_FILE_EXTENSIONS = tuple(ext for ext in UPLOAD_FILE_TYPES if ext not in NON_TEXT_PREVIEW_TYPES)
+TEXT_PREVIEW_EXTENSIONS = tuple(f".{ext}" for ext in TEXT_FILE_EXTENSIONS)
 MAX_PREVIEW_CHARS = 2500
 MAX_ANALYSIS_HISTORY = 20
 MAX_ANALYSIS_HISTORY_DISPLAY = 10
@@ -389,10 +389,10 @@ with tab_upload:
             options=[f.name for f in uploaded_files],
         )
         selected_preview = next((f for f in uploaded_files if f.name == preview_file), None)
-        if selected_preview and selected_preview.type and (
-            selected_preview.type.startswith("text")
-            or selected_preview.name.endswith(TEXT_PREVIEW_EXTENSIONS)
-        ):
+        is_text_content = bool(selected_preview and selected_preview.type and selected_preview.type.startswith("text"))
+        has_text_extension = bool(selected_preview and selected_preview.name.endswith(TEXT_PREVIEW_EXTENSIONS))
+        if selected_preview and (is_text_content or has_text_extension):
+            # 4x buffer captures enough bytes for multi-byte UTF-8 chars before final char truncation.
             preview_bytes = selected_preview.getvalue()[:MAX_PREVIEW_CHARS * 4]
             content = preview_bytes.decode("utf-8", errors="replace")[:MAX_PREVIEW_CHARS]
             st.code(content or "(arquivo vazio)", language=None)
@@ -425,43 +425,44 @@ with tab_upload:
             tipo = tipo_analise
 
         total = len(caminhos_para_analise)
-        for idx, caminho in enumerate(caminhos_para_analise, start=1):
-            with st.spinner(f"🧠 Analisando {caminho} com {modelo_atual}..."):
-                payload = {"caminho": caminho, "modelo": modelo_id}
-                if tipo:
-                    payload["tipo_analise"] = tipo
-                resp = api_post("/analyze-file", payload)
+        try:
+            for idx, caminho in enumerate(caminhos_para_analise, start=1):
+                with st.spinner(f"🧠 Analisando {caminho} com {modelo_atual}..."):
+                    payload = {"caminho": caminho, "modelo": modelo_id}
+                    if tipo:
+                        payload["tipo_analise"] = tipo
+                    resp = api_post("/analyze-file", payload)
 
-            progress.progress(idx / total, text=f"Analisado {idx}/{total}")
-            if resp and "analise" in resp:
-                st.success(f"✅ {resp.get('arquivo', caminho)} ({resp.get('tempo', '?')}s)")
-                with st.expander(f"Resultado: {resp.get('arquivo', caminho)}", expanded=(idx == 1)):
-                    st.markdown(resp["analise"])
-                    cols = st.columns(3)
-                    cols[0].metric("Arquivo", resp.get("arquivo", "?"))
-                    cols[1].metric("Tamanho", f"{resp.get('tamanho', 0):,} chars")
-                    cols[2].metric("Modelo", resp.get("modelo", "?"))
+                progress.progress(idx / total, text=f"Analisado {idx}/{total}")
+                if resp and "analise" in resp:
+                    st.success(f"✅ {resp.get('arquivo', caminho)} ({resp.get('tempo', '?')}s)")
+                    with st.expander(f"Resultado: {resp.get('arquivo', caminho)}", expanded=(idx == 1)):
+                        st.markdown(resp["analise"])
+                        cols = st.columns(3)
+                        cols[0].metric("Arquivo", resp.get("arquivo", "?"))
+                        cols[1].metric("Tamanho", f"{resp.get('tamanho', 0):,} chars")
+                        cols[2].metric("Modelo", resp.get("modelo", "?"))
 
-                st.session_state.analysis_history.insert(0, {
-                    "arquivo": resp.get("arquivo", caminho),
-                    "caminho": caminho,
-                    "modelo": resp.get("modelo", "?"),
-                    "tipo": tipo_analise,
-                    "tempo": resp.get("tempo", "?"),
-                    "timestamp": datetime.now().strftime("%d/%m %H:%M"),
-                })
-                st.session_state.analysis_history = st.session_state.analysis_history[:MAX_ANALYSIS_HISTORY]
-            else:
-                st.error(f"Erro na análise de {caminho}: {resp}")
-
-        progress.empty()
+                    st.session_state.analysis_history.insert(0, {
+                        "arquivo": resp.get("arquivo", caminho),
+                        "caminho": caminho,
+                        "modelo": resp.get("modelo", "?"),
+                        "tipo": tipo_analise,
+                        "tempo": resp.get("tempo", "?"),
+                        "timestamp": datetime.now().strftime("%d/%m %H:%M"),
+                    })
+                    st.session_state.analysis_history = st.session_state.analysis_history[:MAX_ANALYSIS_HISTORY]
+                else:
+                    st.error(f"Erro na análise de {caminho}: {resp}")
+        finally:
+            progress.empty()
 
     st.markdown("---")
     st.subheader("🕘 Histórico de análises")
     if st.session_state.analysis_history:
         for i, item in enumerate(st.session_state.analysis_history[:MAX_ANALYSIS_HISTORY_DISPLAY]):
             c1, c2, c3, c4 = st.columns([2.5, 1.2, 1, 1])
-            c1.caption(f"📄 {item['arquivo']} — `{item['caminho']}`")
+            c1.text(f"📄 {item['arquivo']} — {item['caminho']}")
             c2.caption(f"🧠 {item['modelo']}")
             c3.caption(f"⏱️ {item['tempo']}s")
             if c4.button("Reusar caminho", key=f"reuse_{i}"):
@@ -590,10 +591,11 @@ with tab_providers:
     st.subheader("🧠 Modelos")
     if modelos:
         for key, info in modelos.items():
+            default_label = " (padrão)" if info.get("default") else ""
             st.markdown(
                 f"""
                 <div class="ui-card">
-                    <h4>{info.get("nome", key)} {'⭐' if info.get("default") else ''}</h4>
+                    <h4>{info.get("nome", key)}{default_label}</h4>
                     <div class="metric-line"><b>ID:</b> {info.get("id", "-")}</div>
                     <div class="metric-line"><b>Uso:</b> {info.get("uso", "-")}</div>
                     <div class="metric-line"><b>Max tokens:</b> {info.get("max_tokens", "-")}</div>
